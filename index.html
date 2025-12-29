@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+
+<title>Touch Sketchboard</title>
+
+<style>
+body {
+    margin: 0;
+    font-family: sans-serif;
+    background: #f0f0f0;
+}
+#toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    background: #222;
+    padding: 5px;
+}
+#toolbar button, #toolbar input, #toolbar select {
+    margin: 3px;
+}
+canvas {
+    background: white;
+    touch-action: none;
+}
+</style>
+</head>
+
+<body>
+
+<div id="toolbar">
+    <button onclick="mode='draw'">Draw</button>
+    <button onclick="mode='select'">Select</button>
+    <button onclick="undo()">Undo</button>
+    <button onclick="redo()">Redo</button>
+    <button onclick="addText()">Text</button>
+    <button onclick="addDepth()">3D Depth</button>
+
+    <input type="color" id="fillColor" value="#88ccff">
+    <input type="color" id="strokeColor" value="#000000">
+    <input type="range" id="strokeSize" min="1" max="10" value="2">
+
+    <select id="unit">
+        <option value="px">Points</option>
+        <option value="cm">cm</option>
+        <option value="in">Inches</option>
+    </select>
+
+    <button onclick="saveFile()">Save</button>
+    <input type="file" onchange="loadFile(event)">
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight - 60;
+
+let shapes = [];
+let undoStack = [];
+let redoStack = [];
+let mode = "draw";
+let startX, startY;
+let currentShape = null;
+
+function drawGrid() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = "#eee";
+    for(let x=0;x<canvas.width;x+=25){
+        ctx.beginPath();
+        ctx.moveTo(x,0);
+        ctx.lineTo(x,canvas.height);
+        ctx.stroke();
+    }
+    for(let y=0;y<canvas.height;y+=25){
+        ctx.beginPath();
+        ctx.moveTo(0,y);
+        ctx.lineTo(canvas.width,y);
+        ctx.stroke();
+    }
+}
+
+function redraw() {
+    drawGrid();
+    shapes.forEach(s => drawShape(s));
+}
+
+function drawShape(s) {
+    ctx.fillStyle = s.fill;
+    ctx.strokeStyle = s.stroke;
+    ctx.lineWidth = s.strokeSize;
+    ctx.beginPath();
+    ctx.rect(s.x, s.y, s.w, s.h);
+    if(s.fill) ctx.fill();
+    ctx.stroke();
+
+    if(s.depth){
+        ctx.fillStyle = "rgba(0,0,0,0.2)";
+        ctx.fillRect(s.x+s.depth, s.y+s.depth, s.w, s.h);
+    }
+}
+
+canvas.addEventListener("touchstart", e=>{
+    const t = e.touches[0];
+    startX = t.clientX;
+    startY = t.clientY;
+    currentShape = {
+        x:startX,
+        y:startY,
+        w:0,
+        h:0,
+        fill: fillColor.value,
+        stroke: strokeColor.value,
+        strokeSize: strokeSize.value
+    };
+});
+
+canvas.addEventListener("touchmove", e=>{
+    if(!currentShape) return;
+    const t = e.touches[0];
+    currentShape.w = t.clientX - startX;
+    currentShape.h = t.clientY - startY;
+
+    // Shape recognition (snap to rectangle)
+    if(Math.abs(currentShape.w - currentShape.h) < 20){
+        currentShape.h = currentShape.w;
+    }
+    redraw();
+    drawShape(currentShape);
+});
+
+canvas.addEventListener("touchend", ()=>{
+    if(currentShape){
+        undoStack.push(JSON.stringify(shapes));
+        shapes.push(currentShape);
+        currentShape = null;
+        redraw();
+    }
+});
+
+function undo(){
+    if(undoStack.length){
+        redoStack.push(JSON.stringify(shapes));
+        shapes = JSON.parse(undoStack.pop());
+        redraw();
+    }
+}
+function redo(){
+    if(redoStack.length){
+        undoStack.push(JSON.stringify(shapes));
+        shapes = JSON.parse(redoStack.pop());
+        redraw();
+    }
+}
+
+function addText(){
+    const txt = prompt("Enter text");
+    if(!txt) return;
+    shapes.push({
+        x:50,y:50,w:100,h:30,
+        fill:null,
+        stroke:"#000",
+        strokeSize:1,
+        text:txt
+    });
+    redraw();
+}
+
+function addDepth(){
+    if(shapes.length){
+        shapes[shapes.length-1].depth = 20;
+        redraw();
+    }
+}
+
+function saveFile(){
+    const data = JSON.stringify(shapes);
+    const blob = new Blob([data],{type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "sketch.json";
+    a.click();
+}
+
+function loadFile(e){
+    const file = e.target.files[0];
+    const reader = new FileReader();
+    reader.onload = ()=>{
+        shapes = JSON.parse(reader.result);
+        redraw();
+    };
+    reader.readAsText(file);
+}
+
+drawGrid();
+</script>
+
+</body>
+</html>
